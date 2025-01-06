@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.1.4 (1/6/2025)
+
+### Fixed
+
+- Change font size.
+- Bump versions.
+
 ## v0.1.3 (9/3/2024)
 
 ### Fixed

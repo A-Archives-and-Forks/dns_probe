@@ -797,7 +797,15 @@ fn homepage_handler_main(socket: SocketAddr, req: Request<()>) -> Response<Vec<u
 
         let mut f = f_opt.unwrap();
         let mut data = vec![];
-        f.read_to_end(&mut data).unwrap();
+        let read_result = f.read_to_end(&mut data);
+        if read_result.is_err() {
+            error!(
+                "file not found, method: {}, host: {}, path: {}",
+                method, host, path,
+            );
+            *resp.status_mut() = StatusCode::NOT_FOUND;
+            return resp;
+        }
 
         let file_ext = path.split(".").last().unwrap().to_lowercase();
         let file_type = match file_ext.as_str() {

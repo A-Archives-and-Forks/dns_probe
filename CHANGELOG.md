@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.1.5 (6/1/2025)
+
+### Fixed
+
+- URL path handling.
+ 
 ## v0.1.4 (1/6/2025)
 
 ### Fixed

@@ -6,7 +6,6 @@ use std::vec::Vec;
 use std::{fs, io};
 use tokio::task::JoinHandle;
 
-use h3::error::ErrorLevel;
 use http::{HeaderValue, Request, Response};
 use hyper::service::service_fn;
 use hyper_util::rt::{TokioExecutor, TokioIo};
@@ -160,13 +159,21 @@ impl HttpServer {
 
                             loop {
                                 match h3_conn.accept().await {
-                                    Ok(Some((req, mut stream))) => {
-                                        info!(
-                                            "new http3 request: {:#?} from: {}",
-                                            req, remote_address
-                                        );
-                                        let return_response = (*request_handler)(remote_address, req);
+                                    Ok(Some(resolver)) => {
                                         tokio::spawn(async move {
+                                            let (req, mut stream) = match resolver.resolve_request().await {
+                                                Ok((req, stream)) => (req, stream),
+                                                Err(error) => {
+                                                    error!("failed to resolve request: {error}");
+                                                    return
+                                                }
+                                            };
+
+                                            info!(
+                                                "new http3 request: {:#?} from: {}",
+                                                req, remote_address
+                                            );
+                                            let return_response = (*request_handler)(remote_address, req);
                                             let mut resp = return_response;
                                             let server_name = format!("{CARGO_PKG_NAME}/{CARGO_PKG_VERSION}");
                                             resp.headers_mut().insert(
@@ -209,11 +216,8 @@ impl HttpServer {
                                     }
 
                                     Err(err) => {
-                                        info!("error on accept: {}, from: {}", err, remote_address);
-                                        match err.get_error_level() {
-                                            ErrorLevel::ConnectionError => break,
-                                            ErrorLevel::StreamError => continue,
-                                        }
+                                        error!("error on accept {}", err);
+                                        break;
                                     }
                                 }
                             }
@@ -235,3 +239,4 @@ impl HttpServer {
         warn!("process exit");
     }
 }
+

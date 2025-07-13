@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.1.7 (7/13/2025)
+
+### Fixed
+
+- Update website's description meta.
+
+
 ## v0.1.6 (6/22/2025)
 
 ### Fixed

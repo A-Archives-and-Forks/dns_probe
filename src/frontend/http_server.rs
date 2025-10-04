@@ -13,7 +13,7 @@ use hyper_util::server::conn::auto::Builder;
 use pki_types::{CertificateDer, PrivateKeyDer};
 use quinn_proto::crypto::rustls::QuicServerConfig;
 use tokio::net::TcpListener;
-use tokio::signal::unix::{signal, SignalKind};
+use tokio::time::{timeout, Duration};
 use tokio_rustls::TlsAcceptor;
 
 const CARGO_PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -113,39 +113,14 @@ impl HttpServer {
                         }
                     });
 
-                    let builder = Builder::new(TokioExecutor::new());
-                    let connection = builder.serve_connection(TokioIo::new(tls_stream), svc);
-
-                    let shutdown_signal = async {
-                        let interrupt = async {
-                            signal(SignalKind::interrupt())
-                                .expect("failed to install signal handler")
-                                .recv()
-                                .await;
-                        };
-
-                        let terminate = async {
-                            signal(SignalKind::terminate())
-                                .expect("failed to install signal handler")
-                                .recv()
-                                .await;
-                        };
-
-                        tokio::select! {
-                            _ = interrupt => {},
-                            _ = terminate => {},
-                        }
-                    };
-
-                    tokio::select! {
-                        res = connection => {
-                            if let Err(e) = res {
-                                trace!("serve_connection failed: {e:?}");
-                            }
-                        }
-                        _ = shutdown_signal => {
-                            trace!("shutting down connection");
-                        }
+                    if let Err(err) = timeout(
+                        Duration::from_secs(dns_probe_lib::PROBE_HTTP_SERVER_TIMEOUT_SECONDS),
+                        Builder::new(TokioExecutor::new())
+                            .serve_connection(TokioIo::new(tls_stream), svc),
+                    )
+                    .await
+                    {
+                        trace!("connection timeout or error: {err:?}");
                     }
                 });
             }

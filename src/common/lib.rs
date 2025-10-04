@@ -10,6 +10,8 @@ pub const PROBE_DNS_ANSWER_DELAY: u64 = 5;
 pub const PROBE_FRONTEND_UDP_ID_GEN_NOTIFY_SEND_TIMEOUT: u64 = 1;
 pub const PROBE_FRONTEND_UDP_ID_GEN_MAX_RETRIES: u64 = 5;
 
+pub const PROBE_HTTP_SERVER_TIMEOUT_SECONDS: u64 = 60;
+
 pub struct ProbePayload {
     pub remote_addr: std::net::SocketAddr,
     pub additional_info: Vec<u8>,

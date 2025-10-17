@@ -4,6 +4,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::vec::Vec;
 use std::{fs, io};
+use tokio::signal;
 use tokio::task::JoinHandle;
 
 use http::{HeaderValue, Request, Response};
@@ -13,7 +14,7 @@ use hyper_util::server::conn::auto::Builder;
 use pki_types::{CertificateDer, PrivateKeyDer};
 use quinn_proto::crypto::rustls::QuicServerConfig;
 use tokio::net::TcpListener;
-use tokio::time::{timeout, Duration};
+use tokio::time::Duration;
 use tokio_rustls::TlsAcceptor;
 
 const CARGO_PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -67,63 +68,83 @@ impl HttpServer {
                 vec![b"h2".to_vec(), b"http/1.1".to_vec(), b"http/1.0".to_vec()];
             let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
 
+            let shutdown = shutdown_signal();
+            tokio::pin!(shutdown);
+
             loop {
-                let result = incoming.accept().await;
-                if result.is_err() {
-                    break;
-                }
-
-                let (tcp_stream, remote_addr) = result.unwrap();
-                let tls_acceptor = tls_acceptor.clone();
-                tokio::spawn(async move {
-                    let tls_stream = match tls_acceptor.accept(tcp_stream).await {
-                        Ok(tls_stream) => tls_stream,
-                        Err(err) => {
-                            trace!("failed to perform tls handshake: {err:#}");
-                            return;
+                 tokio::select! {
+                     biased;
+                     _ = &mut shutdown => {
+                         info!("shutdown signal received; exiting accept loop");
+                         break;
+                     }
+                     accept = incoming.accept() => {
+                        if accept.is_err() {
+                            break;
                         }
-                    };
 
-                    let svc = service_fn(move |request: Request<Incoming>| {
-                        let (parts, _body) = request.into_parts();
-                        let new_request = Request::from_parts(parts, ());
-                        let return_response = (*request_handler)(remote_addr.clone(), new_request);
-                        async move {
-                            let (parts, body) = return_response.into_parts();
-                            let bytes: Full<Bytes> = Full::from(Bytes::from(body));
-                            let mut resp = Response::from_parts(parts, bytes);
-                            let server_name = format!("{CARGO_PKG_NAME}/{CARGO_PKG_VERSION}");
-                            resp.headers_mut().insert(
-                                http::header::SERVER,
-                                HeaderValue::from_str(&server_name).unwrap(),
-                            );
-                            let alt_svc_str = format!(
-                                "h3=\":{}\"; ma=3600, h2=\":{}\"; ma=3600",
-                                socket_addr.port(),
-                                socket_addr.port()
-                            );
-                            resp.headers_mut().insert(
-                                http::header::ALT_SVC,
-                                HeaderValue::from_str(&alt_svc_str).unwrap(),
-                            );
-                            return Result::<
-                                hyper::Response<http_body_util::Full<Bytes>>,
-                                hyper::Error,
-                            >::Ok(resp);
-                        }
-                    });
+                        let (tcp_stream, remote_addr) = accept.unwrap();
+                        if let Err(e) = tcp_stream.set_nodelay(true) { warn!("failed to set nodelay: {e}"); }
+                        let tls_acceptor = tls_acceptor.clone();
 
-                    if let Err(err) = timeout(
-                        Duration::from_secs(dns_probe_lib::PROBE_HTTP_SERVER_TIMEOUT_SECONDS),
-                        Builder::new(TokioExecutor::new())
-                            .serve_connection(TokioIo::new(tls_stream), svc),
-                    )
-                    .await
-                    {
-                        trace!("connection timeout or error: {err:?}");
-                    }
-                });
-            }
+                        tokio::spawn(async move {
+                            let tls_stream = match tls_acceptor.accept(tcp_stream).await {
+                                Ok(tls_stream) => tls_stream,
+                                Err(err) => {
+                                    trace!("failed to perform tls handshake: {err:#}");
+                                    return;
+                                }
+                            };
+
+                            let svc = service_fn(move |request: Request<Incoming>| {
+                                let (parts, _body) = request.into_parts();
+                                let new_request = Request::from_parts(parts, ());
+                                let return_response = (*request_handler)(remote_addr.clone(), new_request);
+                                async move {
+                                    let (parts, body) = return_response.into_parts();
+                                    let bytes: Full<Bytes> = Full::from(Bytes::from(body));
+                                    let mut resp = Response::from_parts(parts, bytes);
+                                    let server_name = format!("{CARGO_PKG_NAME}/{CARGO_PKG_VERSION}");
+                                    resp.headers_mut().insert(
+                                        http::header::SERVER,
+                                        HeaderValue::from_str(&server_name).unwrap(),
+                                    );
+                                    let alt_svc_str = format!(
+                                        "h3=\":{}\"; ma=3600, h2=\":{}\"; ma=3600",
+                                        socket_addr.port(),
+                                        socket_addr.port()
+                                    );
+                                    resp.headers_mut().insert(
+                                        http::header::ALT_SVC,
+                                        HeaderValue::from_str(&alt_svc_str).unwrap(),
+                                    );
+                                    return Result::<
+                                        hyper::Response<http_body_util::Full<Bytes>>,
+                                        hyper::Error,
+                                    >::Ok(resp);
+                                }
+                            });
+
+                            let binding = Builder::new(TokioExecutor::new());
+                            let conn = binding.serve_connection(TokioIo::new(tls_stream), svc);
+                            tokio::pin!(conn);
+
+                            let idle = tokio::time::sleep(Duration::from_secs(dns_probe_lib::PROBE_HTTP_SERVER_TIMEOUT_SECONDS));
+                            tokio::pin!(idle);
+
+                            tokio::select! {
+                                res = &mut conn => {
+                                    if let Err(e) = res { warn!("conn error: {e}"); }
+                                }
+                                _ = &mut idle => {
+                                    conn.as_mut().graceful_shutdown();
+                                    let _ = conn.as_mut().await;
+                                }
+                            }
+                        });
+                     }
+                 }
+             }
         }));
 
         let (certs_http3, key_http3) = (certs.clone(), key.clone_key());
@@ -244,3 +265,24 @@ impl HttpServer {
         warn!("process exit");
     }
 }
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        signal::ctrl_c().await.expect("install Ctrl+C handler");
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut sigterm = signal(SignalKind::terminate()).expect("install SIGTERM handler");
+        sigterm.recv().await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+}
+

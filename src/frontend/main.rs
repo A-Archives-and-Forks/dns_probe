@@ -9,6 +9,7 @@ mod asns;
 use asns::ASNs;
 use std::fs::File;
 use std::io::Read;
+use std::sync::Arc;
 
 use std::io;
 use std::net::IpAddr;
@@ -19,8 +20,8 @@ use hickory_proto::serialize::binary::BinEncodable;
 use http::{HeaderValue, Method, Request, Response, StatusCode, Version};
 use tokio::spawn;
 
+use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
-use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Parser)]
@@ -118,12 +119,15 @@ lazy_static::lazy_static! {
         let asn = ASNs::new(&asn_file_path).unwrap();
         asn
     };
+
+    static ref ARGS: Arc<Cli> = {
+        let args = Cli::parse();
+        Arc::new(args)
+    };
 }
 
 #[tokio::main]
 async fn main() {
-    let _ = Cli::parse();
-
     rustls::crypto::ring::default_provider()
         .install_default()
         .expect("Failed to install rustls crypto provider");
@@ -138,9 +142,9 @@ async fn main() {
 
     let handles = vec![
         spawn(async {
-            let args = Cli::parse();
-            let main_cert = args.main_cert_path;
-            let main_key = args.main_key_path;
+            let args = ARGS.clone();
+            let main_cert = args.main_cert_path.clone();
+            let main_key = args.main_key_path.clone();
             warn!("http main ipv4 running on a worker thread");
             let ipv4_addr = Ipv4Addr::new(0, 0, 0, 0);
             let ipv4_socket = SocketAddrV4::new(ipv4_addr, 443);
@@ -157,9 +161,9 @@ async fn main() {
             io::Result::Ok("")
         }),
         spawn(async {
-            let args = Cli::parse();
-            let main_cert = args.main_cert_path;
-            let main_key = args.main_key_path;
+            let args = ARGS.clone();
+            let main_cert = args.main_cert_path.clone();
+            let main_key = args.main_key_path.clone();
             warn!("http main ipv6 running on a worker thread");
             let ipv6_addr = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0);
             let ipv6_socket = SocketAddrV6::new(ipv6_addr, 443, 0, 0);
@@ -182,9 +186,9 @@ async fn main() {
             io::Result::Ok("")
         }),
         spawn(async {
-            let args = Cli::parse();
-            let v4_cert = args.probe_v4_cert_path;
-            let v4_key = args.probe_v4_key_path;
+            let args = ARGS.clone();
+            let v4_cert = args.probe_v4_cert_path.clone();
+            let v4_key = args.probe_v4_key_path.clone();
             let port = 8443;
             warn!("dns http ipv4 on {} running on a worker thread", port);
             let ipv4_addr = Ipv4Addr::new(0, 0, 0, 0);
@@ -202,9 +206,9 @@ async fn main() {
             io::Result::Ok("")
         }),
         spawn(async {
-            let args = Cli::parse();
-            let v6_cert = args.probe_v6_cert_path;
-            let v6_key = args.probe_v6_key_path;
+            let args = ARGS.clone();
+            let v6_cert = args.probe_v6_cert_path.clone();
+            let v6_key = args.probe_v6_key_path.clone();
             let port = 8443;
             warn!("ip dns check ipv6 on {} running on a worker thread", port);
             let ipv6_addr = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0);
@@ -222,9 +226,9 @@ async fn main() {
             io::Result::Ok("")
         }),
         spawn(async {
-            let args = Cli::parse();
-            let v4_cert = args.probe_v4_cert_path;
-            let v4_key = args.probe_v4_key_path;
+            let args = ARGS.clone();
+            let v4_cert = args.probe_v4_cert_path.clone();
+            let v4_key = args.probe_v4_key_path.clone();
             let port = 8444;
             warn!("ip dns check ipv4 on {} running on a worker thread", port);
             let ipv4_addr = Ipv4Addr::new(0, 0, 0, 0);
@@ -242,9 +246,9 @@ async fn main() {
             io::Result::Ok("")
         }),
         spawn(async {
-            let args = Cli::parse();
-            let v6_cert = args.probe_v6_cert_path;
-            let v6_key = args.probe_v6_key_path;
+            let args = ARGS.clone();
+            let v6_cert = args.probe_v6_cert_path.clone();
+            let v6_key = args.probe_v6_key_path.clone();
             let port = 8444;
             warn!("ip dns check ipv6 on {} running on a worker thread", port);
             let ipv6_addr = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0);
@@ -272,9 +276,9 @@ async fn dns_notify_handler_main() {
     use byteorder::{BigEndian, ReadBytesExt};
     use hickory_proto::op::message;
     use tokio::net::UdpSocket;
-    let args = Cli::parse();
-    let domain = args.domain;
-    let addr = args.listen;
+    let args = ARGS.clone();
+    let domain = args.domain.clone();
+    let addr = args.listen.clone();
 
     let server_socket = UdpSocket::bind(addr)
         .await
@@ -340,9 +344,9 @@ async fn dns_notify_handler_main() {
         let is_v4 = components[1] == "v4";
         {
             let mut hashmap = if is_v4 {
-                CACHED_PROBE_ITEMS_V4.lock().unwrap()
+                CACHED_PROBE_ITEMS_V4.lock()
             } else {
-                CACHED_PROBE_ITEMS_V6.lock().unwrap()
+                CACHED_PROBE_ITEMS_V6.lock()
             };
             if let Some(item) = hashmap.get_mut(totp) {
                 let timing_info = &mut item.0;
@@ -422,9 +426,9 @@ async fn dns_notify_handler_main() {
             .to_string();
         {
             let mut hashmap = if is_v4 {
-                CACHED_PROBE_ITEMS_V4.lock().unwrap()
+                CACHED_PROBE_ITEMS_V4.lock()
             } else {
-                CACHED_PROBE_ITEMS_V6.lock().unwrap()
+                CACHED_PROBE_ITEMS_V6.lock()
             };
             if let Some(values) = hashmap.get_mut(&totp) {
                 values.1.insert(probe_item);
@@ -436,8 +440,8 @@ async fn dns_notify_handler_main() {
 }
 
 fn ip_dns_check_handler_main(addr: SocketAddr, req: Request<()>) -> Response<Vec<u8>> {
-    let args = Cli::parse();
-    let domain = args.domain;
+    let args = ARGS.clone();
+    let domain = args.domain.clone();
     let mut response: Response<Vec<u8>> = http::Response::builder()
         .status(StatusCode::OK)
         .body(Vec::new())
@@ -503,9 +507,9 @@ fn ip_dns_check_handler_main(addr: SocketAddr, req: Request<()>) -> Response<Vec
     let totp = components[0];
     let is_v4 = components[1] == "v4";
     let mut hashmap = if is_v4 {
-        CACHED_PROBE_ITEMS_V4.lock().unwrap()
+        CACHED_PROBE_ITEMS_V4.lock()
     } else {
-        CACHED_PROBE_ITEMS_V6.lock().unwrap()
+        CACHED_PROBE_ITEMS_V6.lock()
     };
     let values_opt = hashmap.get_mut(totp);
     if !is_ip_checking_request && values_opt.is_none() {
@@ -633,7 +637,7 @@ fn ip_dns_check_handler_main(addr: SocketAddr, req: Request<()>) -> Response<Vec
     // Also add the probe items of another internet protocol.
     // When items added, remove them from set to avoid duplicate items displayed.
     if is_v4 {
-        let mut hashmap = CACHED_PROBE_ITEMS_V6.lock().unwrap();
+        let mut hashmap = CACHED_PROBE_ITEMS_V6.lock();
         if let Some(values_opt) = hashmap.get_mut(totp) {
             let set = values_opt.1.clone();
             for v in set {
@@ -642,7 +646,7 @@ fn ip_dns_check_handler_main(addr: SocketAddr, req: Request<()>) -> Response<Vec
             values_opt.1.clear();
         }
     } else {
-        let mut hashmap = CACHED_PROBE_ITEMS_V4.lock().unwrap();
+        let mut hashmap = CACHED_PROBE_ITEMS_V4.lock();
         if let Some(values_opt) = hashmap.get_mut(totp) {
             let set = values_opt.1.clone();
             for v in set {
@@ -696,9 +700,9 @@ fn ip_dns_check_handler_main(addr: SocketAddr, req: Request<()>) -> Response<Vec
 fn notify_id_gen_t0(totp: String, is_ipv6: bool) {
     debug!("id gen received: {}", totp);
     let mut hashmap = if is_ipv6 {
-        CACHED_PROBE_ITEMS_V6.lock().unwrap()
+        CACHED_PROBE_ITEMS_V6.lock()
     } else {
-        CACHED_PROBE_ITEMS_V4.lock().unwrap()
+        CACHED_PROBE_ITEMS_V4.lock()
     };
     let t0 = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -729,9 +733,9 @@ fn notify_id_gen_t0(totp: String, is_ipv6: bool) {
 }
 
 fn homepage_handler_main(socket: SocketAddr, req: Request<()>) -> Response<Vec<u8>> {
-    let args = Cli::parse();
-    let domain = args.domain;
-    let mut site_root = args.site_root_dir;
+    let args = ARGS.clone();
+    let domain = args.domain.clone();
+    let mut site_root = args.site_root_dir.clone();
     while site_root.ends_with("/") {
         site_root.pop();
     }

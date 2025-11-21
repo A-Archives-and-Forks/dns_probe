@@ -1,22 +1,22 @@
+use http::StatusCode;
+use http::{HeaderValue, Request, Response};
+use http_body_util::BodyExt;
 use http_body_util::Full;
 use hyper::body::{Bytes, Incoming};
-use std::net::SocketAddr;
-use std::sync::Arc;
-use std::vec::Vec;
-use std::{fs, io};
-use tokio::signal;
-use tokio::task::JoinHandle;
-
-use http::{HeaderValue, Request, Response};
 use hyper::service::service_fn;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder;
 use pki_types::{CertificateDer, PrivateKeyDer};
 use quinn_proto::crypto::rustls::QuicServerConfig;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::vec::Vec;
+use std::{fs, io};
 use tokio::net::TcpListener;
+use tokio::signal;
+use tokio::task::JoinHandle;
 use tokio::time::Duration;
 use tokio_rustls::TlsAcceptor;
-
 const CARGO_PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 
@@ -96,32 +96,97 @@ impl HttpServer {
                                 }
                             };
 
+                            const MAX_BODY_SIZE: usize = 16 * 1024; // 16 KiB
+
                             let svc = service_fn(move |request: Request<Incoming>| {
-                                let (parts, _body) = request.into_parts();
-                                let new_request = Request::from_parts(parts, ());
-                                let return_response = (*request_handler)(remote_addr.clone(), new_request);
+                                let remote_addr = remote_addr.clone();
+                                let port = socket_addr.port();
+
                                 async move {
-                                    let (parts, body) = return_response.into_parts();
-                                    let bytes: Full<Bytes> = Full::from(Bytes::from(body));
+                                    let (parts, mut body) = request.into_parts();
+                                    let mut read_len: usize = 0;
+                                    while let Some(chunk_result) = body.frame().await {
+                                        let chunk = match &chunk_result {
+                                            Ok(c) => c.data_ref(),
+                                            Err(e) => {
+                                                warn!(
+                                                    "error reading request body from {}: {}",
+                                                    remote_addr, e
+                                                );
+
+                                                let mut resp = Response::builder()
+                                                    .status(StatusCode::BAD_REQUEST)
+                                                    .body(Full::from(Bytes::new()))
+                                                    .unwrap();
+
+                                                let server_name = format!("{CARGO_PKG_NAME}/{CARGO_PKG_VERSION}");
+                                                resp.headers_mut().insert(
+                                                    http::header::SERVER,
+                                                    HeaderValue::from_str(&server_name).unwrap(),
+                                                );
+                                                let alt_svc_str =
+                                                    format!("h3=\":{}\"; ma=3600, h2=\":{}\"; ma=3600", port, port);
+                                                resp.headers_mut().insert(
+                                                    http::header::ALT_SVC,
+                                                    HeaderValue::from_str(&alt_svc_str).unwrap(),
+                                                );
+
+                                                return Ok(resp);
+                                            }
+                                        };
+
+                                        if let Some(data ) = chunk {
+                                            read_len += data.len();
+                                        }
+
+                                        if read_len > MAX_BODY_SIZE {
+                                            warn!(
+                                                "request body too large from {}: {} bytes (limit {})",
+                                                remote_addr, read_len, MAX_BODY_SIZE
+                                            );
+
+                                            let mut resp = Response::builder()
+                                                .status(StatusCode::PAYLOAD_TOO_LARGE)
+                                                .body(Full::from(Bytes::new()))
+                                                .unwrap();
+
+                                            let server_name = format!("{CARGO_PKG_NAME}/{CARGO_PKG_VERSION}");
+                                            resp.headers_mut().insert(
+                                                http::header::SERVER,
+                                                HeaderValue::from_str(&server_name).unwrap(),
+                                            );
+                                            let alt_svc_str =
+                                                format!("h3=\":{}\"; ma=3600, h2=\":{}\"; ma=3600", port, port);
+                                            resp.headers_mut().insert(
+                                                http::header::ALT_SVC,
+                                                HeaderValue::from_str(&alt_svc_str).unwrap(),
+                                            );
+
+                                            return Ok(resp);
+                                        }
+                                    }
+
+
+                                    let new_request = Request::from_parts(parts, ());
+                                    let return_response = (*request_handler)(remote_addr, new_request);
+
+                                    let (parts, body_vec) = return_response.into_parts();
+                                    let bytes: Full<Bytes> = Full::from(Bytes::from(body_vec));
                                     let mut resp = Response::from_parts(parts, bytes);
+
                                     let server_name = format!("{CARGO_PKG_NAME}/{CARGO_PKG_VERSION}");
                                     resp.headers_mut().insert(
                                         http::header::SERVER,
                                         HeaderValue::from_str(&server_name).unwrap(),
                                     );
-                                    let alt_svc_str = format!(
-                                        "h3=\":{}\"; ma=3600, h2=\":{}\"; ma=3600",
-                                        socket_addr.port(),
-                                        socket_addr.port()
-                                    );
+                                    let alt_svc_str =
+                                        format!("h3=\":{}\"; ma=3600, h2=\":{}\"; ma=3600", port, port);
                                     resp.headers_mut().insert(
                                         http::header::ALT_SVC,
                                         HeaderValue::from_str(&alt_svc_str).unwrap(),
                                     );
-                                    return Result::<
-                                        hyper::Response<http_body_util::Full<Bytes>>,
-                                        hyper::Error,
-                                    >::Ok(resp);
+
+                                    Ok::<_, hyper::Error>(resp)
                                 }
                             });
 
@@ -285,4 +350,3 @@ async fn shutdown_signal() {
         _ = terminate => {},
     }
 }
-

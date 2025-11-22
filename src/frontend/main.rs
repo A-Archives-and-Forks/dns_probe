@@ -106,7 +106,8 @@ lazy_static::lazy_static! {
     static ref CACHED_PROBE_ITEMS_V4: Mutex<HashMap<String, (TimingInfo, HashSet<ProbeItem>)>> = Mutex::new(HashMap::new());
     static ref CACHED_PROBE_ITEMS_V6: Mutex<HashMap<String, (TimingInfo, HashSet<ProbeItem>)>> = Mutex::new(HashMap::new());
     static ref HTML_TEMPLATE: String = {
-        let domain = Cli::parse().domain;
+        let args = ARGS.clone();
+        let domain = args.domain.clone();
         let str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/frontend/template.html"
@@ -114,7 +115,8 @@ lazy_static::lazy_static! {
         str
     };
     static ref ASN_HANDLE: ASNs = {
-        let asn_file_path = Cli::parse().asn_file_path;
+        let args = ARGS.clone();
+        let asn_file_path = args.asn_file_path.clone();
         let _ = File::open(&asn_file_path).expect(&format!("The asn file does not exist: {asn_file_path}"));
         let asn = ASNs::new(&asn_file_path).unwrap();
         asn
@@ -136,6 +138,8 @@ async fn main() {
 
     env_logger::init();
     warn!("process start");
+
+    let _ = ARGS;
 
     let _ = ASN_HANDLE;
     warn!("asn initialized");

@@ -107,7 +107,7 @@ lazy_static::lazy_static! {
     static ref CACHED_PROBE_ITEMS_V6: Mutex<HashMap<String, (TimingInfo, HashSet<ProbeItem>)>> = Mutex::new(HashMap::new());
     static ref HTML_TEMPLATE: String = {
         let args = ARGS.clone();
-        let domain = args.domain.clone();
+        let domain = &args.domain;
         let str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/frontend/template.html"
@@ -116,7 +116,7 @@ lazy_static::lazy_static! {
     };
     static ref ASN_HANDLE: ASNs = {
         let args = ARGS.clone();
-        let asn_file_path = args.asn_file_path.clone();
+        let asn_file_path = &args.asn_file_path;
         let _ = File::open(&asn_file_path).expect(&format!("The asn file does not exist: {asn_file_path}"));
         let asn = ASNs::new(&asn_file_path).unwrap();
         asn

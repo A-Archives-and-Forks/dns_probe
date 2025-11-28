@@ -782,10 +782,11 @@ fn homepage_handler_main(socket: SocketAddr, req: Request<()>) -> Response<Vec<u
     if path != "/" {
         if path.contains("..") {
             error!(
-                "illegal request path, method: {}, host: {}, path: {}",
+                "illegal request path, method: {}, host: {}, path: {}, ip: {}",
                 method,
                 req.uri().host().unwrap_or("None"),
                 path,
+                socket.ip()
             );
             *resp.status_mut() = StatusCode::NOT_FOUND;
             return resp;

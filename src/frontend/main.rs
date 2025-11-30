@@ -463,11 +463,11 @@ fn ip_dns_check_handler_main(addr: SocketAddr, req: Request<()>) -> Response<Vec
     );
     let h1_host = req.headers().get("host").map(|s| s.to_str().unwrap());
     let h2_host = req.uri().host();
-    let host = h2_host.or(h1_host);
+    let host = h2_host.or(h1_host).unwrap_or(&domain);
     let path = req.uri().path();
     let query_opt = req.uri().query();
     let method = req.method();
-    if method != &Method::GET || host.is_none() {
+    if method != &Method::GET {
         error!(
             "illegal request, method: {}, host: {}, path: {}, ip: {}",
             method,
@@ -478,7 +478,6 @@ fn ip_dns_check_handler_main(addr: SocketAddr, req: Request<()>) -> Response<Vec
         *response.status_mut() = StatusCode::FORBIDDEN;
         return response;
     }
-    let host = host.unwrap();
 
     if path != "/" {
         error!(

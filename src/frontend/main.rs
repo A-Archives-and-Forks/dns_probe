@@ -744,7 +744,7 @@ fn homepage_handler_main(socket: SocketAddr, req: Request<()>) -> Response<Vec<u
     }
     let h1_host = req.headers().get("host").map(|s| s.to_str().unwrap());
     let h2_host = req.uri().host();
-    let host = h2_host.or(h1_host);
+    let host = h2_host.or(h1_host).unwrap_or(&domain);
     let path = req.uri().path();
     let method = req.method();
 
@@ -752,7 +752,7 @@ fn homepage_handler_main(socket: SocketAddr, req: Request<()>) -> Response<Vec<u
         .status(StatusCode::OK)
         .body(Vec::new())
         .unwrap();
-    if method != &Method::GET || host.is_none() {
+    if method != &Method::GET {
         error!(
             "illegal request, method: {}, host: {}, path: {}, ip: {}",
             method,
@@ -764,7 +764,6 @@ fn homepage_handler_main(socket: SocketAddr, req: Request<()>) -> Response<Vec<u
         return resp;
     }
 
-    let host = host.unwrap();
     let host_without_colon = host.split(':').next().unwrap().to_lowercase();
     if domain != host_without_colon {
         error!(

@@ -260,6 +260,8 @@ impl HttpServer {
                                                 }
                                             };
 
+                                            let _ = stream.recv_data().await;
+
                                             info!(
                                                 "new http3 request: {:#?} from: {}",
                                                 req, remote_address

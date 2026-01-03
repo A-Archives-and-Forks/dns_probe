@@ -28,6 +28,7 @@ h3-quinn = "0.0.10"
 flate2 = "1"
 bytes = "1.6.1"
 clap = { version = "4.5.15", features = ["derive"] }
+parking_lot = "0.12.5"
 
 [[bin]]
 name = "dns_probe_resolver"

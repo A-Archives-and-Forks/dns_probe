@@ -65,7 +65,7 @@ impl HttpServer {
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
                 .unwrap();
             server_config.alpn_protocols =
-                vec![b"h2".to_vec(), b"http/1.1".to_vec(), b"http/1.0".to_vec()];
+                vec![b"h2".to_vec(), b"http/1.1".to_vec()];
             let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
 
             let shutdown = shutdown_signal();

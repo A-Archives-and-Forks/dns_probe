@@ -203,7 +203,18 @@ impl HttpServer {
                                 }
                                 _ = &mut idle => {
                                     conn.as_mut().graceful_shutdown();
-                                    let _ = conn.as_mut().await;
+                                    let shutdown_timeout = tokio::time::sleep(Duration::from_secs(5));
+                                    tokio::pin!(shutdown_timeout);
+                                    tokio::select! {
+                                         res = conn.as_mut() => {
+                                             if let Err(e) = res {
+                                                 warn!("error during connection shutdown: {e}");
+                                             }
+                                         }
+                                         _ = &mut shutdown_timeout => {
+                                             error!("connection shutdown timed out, forcing close");
+                                        }
+                                   }
                                 }
                             }
                         });
@@ -352,3 +363,4 @@ async fn shutdown_signal() {
         _ = terminate => {},
     }
 }
+

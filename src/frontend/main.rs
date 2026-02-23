@@ -641,8 +641,13 @@ fn ip_dns_check_handler_main(addr: SocketAddr, req: Request<()>) -> Response<Vec
     let mut dns_response: String = "".to_string();
     let mut values = values.1.clone();
 
-    // Also add the probe items of another internet protocol.
-    // When items added, remove them from set to avoid duplicate items displayed.
+    // Release lock A before acquiring lock B to avoid AB-BA deadlock.
+    // Previously, holding V4 lock while acquiring V6 lock (and vice versa)
+    // caused a classic deadlock when concurrent IPv4 and IPv6 requests occurred.
+    hashmap.remove(totp);
+    drop(hashmap);
+
+    // Now safely acquire the other lock without risk of deadlock.
     if is_v4 {
         let mut hashmap = CACHED_PROBE_ITEMS_V6.lock();
         if let Some(values_opt) = hashmap.get_mut(totp) {
@@ -694,9 +699,6 @@ fn ip_dns_check_handler_main(addr: SocketAddr, req: Request<()>) -> Response<Vec
     }
     dns_response += "]";
     dns_response += "}";
-
-    // clear entry
-    hashmap.remove(totp);
 
     let mut body_bytes = Vec::from(dns_response);
     response.body_mut().append(&mut body_bytes);

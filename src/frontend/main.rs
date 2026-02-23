@@ -34,9 +34,13 @@ struct Cli {
     #[arg(short, long)]
     listen: String,
 
-    /// The asn file path (e.g. ip2asn-combined.tsv.gz)
+    /// The ASN database file path (ip2asn-combined.tsv.gz)
     #[arg(short, long)]
     asn_file_path: String,
+
+    /// The ip2region database directory containing ipv4_source.txt and ipv6_source.txt
+    #[arg(short = 'i', long)]
+    ip_db_dir: String,
 
     /// The root dir for the main page which contains site favicon files, robots.txt, etc.
     #[arg(short, long)]
@@ -117,8 +121,8 @@ lazy_static::lazy_static! {
     static ref ASN_HANDLE: ASNs = {
         let args = ARGS.clone();
         let asn_file_path = &args.asn_file_path;
-        let _ = File::open(&asn_file_path).expect(&format!("The asn file does not exist: {asn_file_path}"));
-        let asn = ASNs::new(&asn_file_path).unwrap();
+        let ip_db_dir = &args.ip_db_dir;
+        let asn = ASNs::new(&asn_file_path, &ip_db_dir).unwrap();
         asn
     };
 

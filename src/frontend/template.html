@@ -128,15 +128,19 @@
                                     "'>" +
                                     ipv4_addr +
                                     "</span>";
+                                var info_parts = [];
+                                if (dns_data["number"] && dns_data["number"] != "0") {
+                                    info_parts.push("AS" + dns_data["number"]);
+                                }
+                                if (dns_data["description"]) {
+                                    info_parts.push(dns_data["description"]);
+                                }
+                                if (dns_data["country"]) {
+                                    info_parts.push(dns_data["country"]);
+                                }
                                 document.getElementById(
                                     tag_id,
-                                ).nextSibling.textContent =
-                                    "AS: " +
-                                    dns_data["number"] +
-                                    ", " +
-                                    dns_data["description"] +
-                                    ", " +
-                                    dns_data["country"];
+                                ).nextSibling.textContent = info_parts.join(", ");
                             } else {
                                 document.getElementById(tag_id).innerHTML =
                                     "None";
@@ -205,13 +209,17 @@
                                         "https://bgp.tools/prefix/" + ip,
                                     );
                                     if (dns["asn"] != null) {
-                                        new_dns_node.children[2].textContent =
-                                            "AS: " +
-                                            dns["asn"]["number"] +
-                                            ", " +
-                                            dns["asn"]["description"] +
-                                            ", " +
-                                            dns["asn"]["country"];
+                                        var asn_parts = [];
+                                        if (dns["asn"]["number"] && dns["asn"]["number"] != "0") {
+                                            asn_parts.push("AS" + dns["asn"]["number"]);
+                                        }
+                                        if (dns["asn"]["description"]) {
+                                            asn_parts.push(dns["asn"]["description"]);
+                                        }
+                                        if (dns["asn"]["country"]) {
+                                            asn_parts.push(dns["asn"]["country"]);
+                                        }
+                                        new_dns_node.children[2].textContent = asn_parts.join(", ");
                                     }
                                     if (dns["edns_enabled"]) {
                                         new_dns_node.children[3].textContent =
